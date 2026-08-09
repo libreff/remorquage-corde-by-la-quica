@@ -6,6 +6,7 @@ local ropeHandles = {}
 local ownedRopeId
 local breakPending = {}
 local textVisible = false
+local detachBusy = false
 
 local function notify(description, kind)
     lib.notify({ title = 'Corde de remorquage', description = description, type = kind or 'inform' })
@@ -242,15 +243,20 @@ local function ensureVisual(ropeId)
     ropeHandles[ropeId] = rope
 end
 
-local function detachOwnedRope()
-    if not ownedRopeId then return end
+local function detachOwnedRope(targetVehicle)
+    if not ownedRopeId or detachBusy then return end
+    detachBusy = true
     local data = ropeStates[ownedRopeId]
-    local tractor = data and NetToVeh(data.tractorNetId) or 0
-    if tractor ~= 0 and DoesEntityExist(tractor) then
-        if not attachmentAnimation(tractor, 'Détachement de la corde', Config.DetachDuration) then return end
+    local vehicle = targetVehicle or (data and NetToVeh(data.tractorNetId) or 0)
+    if vehicle ~= 0 and DoesEntityExist(vehicle) then
+        if not attachmentAnimation(vehicle, 'Détachement de la corde', Config.DetachDuration) then
+            detachBusy = false
+            return
+        end
     end
 
     local response = lib.callback.await('remorquage_corde:server:detach', false, ownedRopeId)
+    detachBusy = false
     if not response or not response.ok then return notify(errorText(response and response.code), 'error') end
     notify(Config.Text.detached, 'success')
 end
@@ -258,14 +264,7 @@ end
 local function useRope()
     if placement then return cancelPlacement(true, false) end
     if ownedRopeId then
-        local result = lib.alertDialog({
-            header = 'Corde de remorquage',
-            content = 'Voulez-vous détacher la corde actuellement installée ?',
-            centered = true,
-            cancel = true,
-            labels = { confirm = 'Détacher', cancel = 'Conserver' }
-        })
-        if result == 'confirm' then detachOwnedRope() end
+        notify('Approchez-vous d’un point d’attache et appuyez sur E pour détacher la corde.', 'inform')
         return
     end
     startPlacement()
@@ -292,9 +291,53 @@ RegisterNetEvent('remorquage_corde:client:ropeRemoved', function(ropeId, reason)
     end
 end)
 
-RegisterCommand('detachercorde', function()
-    if ownedRopeId then detachOwnedRope() else notify('Vous n’avez aucune corde installée.', 'error') end
-end, false)
+CreateThread(function()
+    while true do
+        local wait = 1500
+        local promptVisible = textVisible == Config.Text.detachPrompt
+
+        if ownedRopeId and not placement and not detachBusy then
+            wait = 350
+            local data = ropeStates[ownedRopeId]
+            local tractor = data and NetToVeh(data.tractorNetId) or 0
+            local towed = data and NetToVeh(data.towedNetId) or 0
+
+            if tractor ~= 0 and towed ~= 0 and DoesEntityExist(tractor) and DoesEntityExist(towed) then
+                local rear = attachmentPoint(tractor, true)
+                local front = attachmentPoint(towed, false)
+                local pedCoords = GetEntityCoords(PlayerPedId())
+                local rearDistance = #(pedCoords - rear)
+                local frontDistance = #(pedCoords - front)
+                local point, vehicle
+
+                if rearDistance <= Config.InteractionDistance and rearDistance <= frontDistance then
+                    point, vehicle = rear, tractor
+                elseif frontDistance <= Config.InteractionDistance then
+                    point, vehicle = front, towed
+                end
+
+                if point then
+                    wait = 0
+                    DrawMarker(Config.Marker.type, point.x, point.y, point.z + 0.08, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, Config.Marker.scale.x, Config.Marker.scale.y, Config.Marker.scale.z, Config.Marker.detachColour[1], Config.Marker.detachColour[2], Config.Marker.detachColour[3], Config.Marker.detachColour[4], false, true, 2, false, nil, nil, false)
+                    showText(Config.Text.detachPrompt)
+
+                    if IsControlJustReleased(0, Config.Controls.confirm) then
+                        hideText()
+                        detachOwnedRope(vehicle)
+                    end
+                elseif promptVisible then
+                    hideText()
+                end
+            elseif promptVisible then
+                hideText()
+            end
+        elseif promptVisible then
+            hideText()
+        end
+
+        Wait(wait)
+    end
+end)
 
 CreateThread(function()
     Wait(1200)

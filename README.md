@@ -31,7 +31,7 @@ client = {
 4. Appuyez de nouveau sur `E` après l’animation de fixation.
 5. Montez dans le véhicule tracteur et roulez progressivement.
 
-Réutilisez l’item ou exécutez `/detachercorde` pour retirer la corde. Retour arrière annule la pose avant la seconde fixation.
+Pour retirer la corde, approchez-vous de son point d’attache à l’arrière du véhicule tracteur ou à l’avant du véhicule tracté, puis appuyez sur `E`. Retour arrière annule la pose avant la seconde fixation.
 
 ## Sécurité et synchronisation
 

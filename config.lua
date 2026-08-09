@@ -33,12 +33,14 @@ Config.Marker = {
     type = 2,
     scale = vec3(0.22, 0.22, 0.22),
     tractorColour = { 71, 151, 214, 210 },
-    towedColour = { 232, 151, 66, 210 }
+    towedColour = { 232, 151, 66, 210 },
+    detachColour = { 214, 75, 75, 220 }
 }
 
 Config.Text = {
     selectTractor = '[E] Attacher la corde à l’arrière du véhicule tracteur',
     selectTowed = '[E] Attacher la corde à l’avant du véhicule tracté',
+    detachPrompt = '[E] Détacher la corde',
     cancel = '[RETOUR] Annuler',
     noVehicle = 'Approchez-vous du point d’attache d’un véhicule.',
     attachedFirst = 'Premier point fixé. Amenez la corde à l’avant du véhicule à tracter.',
