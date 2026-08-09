@@ -5,23 +5,17 @@ local ropeStates = {}
 local ropeHandles = {}
 local ownedRopeId
 local breakPending = {}
-local textVisible = false
 local detachBusy = false
+local ropeItemAvailable = false
+local lastItemCheck = 0
+local targetNames = {
+    tractor = 'remorquage_corde_attach_tractor',
+    towed = 'remorquage_corde_attach_towed',
+    detach = 'remorquage_corde_detach'
+}
 
 local function notify(description, kind)
     lib.notify({ title = 'Corde de remorquage', description = description, type = kind or 'inform' })
-end
-
-local function hideText()
-    if textVisible then lib.hideTextUI() end
-    textVisible = false
-end
-
-local function showText(text)
-    if textVisible == text then return end
-    if textVisible then lib.hideTextUI() end
-    lib.showTextUI(text, { position = 'right-center', icon = 'link' })
-    textVisible = text
 end
 
 local function loadRopeTextures()
@@ -54,24 +48,6 @@ local function attachmentPoint(vehicle, rear)
     local height = maximum.z - minimum.z
     local z = minimum.z + math.max(0.28, height * 0.32)
     return GetOffsetFromEntityInWorldCoords(vehicle, 0.0, y, z)
-end
-
-local function nearestAttachment(rear)
-    local ped = PlayerPedId()
-    local pedCoords = GetEntityCoords(ped)
-    local selectedVehicle, selectedPoint, selectedDistance
-
-    for _, vehicle in ipairs(GetGamePool('CVehicle')) do
-        if DoesEntityExist(vehicle) and (not placement or not placement.tractorNetId or VehToNet(vehicle) ~= placement.tractorNetId) then
-            local point = attachmentPoint(vehicle, rear)
-            local currentDistance = #(pedCoords - point)
-            if currentDistance <= Config.InteractionDistance and (not selectedDistance or currentDistance < selectedDistance) then
-                selectedVehicle, selectedPoint, selectedDistance = vehicle, point, currentDistance
-            end
-        end
-    end
-
-    return selectedVehicle, selectedPoint
 end
 
 local function deleteCarryVisuals()
@@ -130,26 +106,64 @@ local function errorText(code)
     return errors[code] or 'Action impossible.'
 end
 
+local function playerHasRopeItem(force)
+    local now = GetGameTimer()
+    if not force and now - lastItemCheck < 750 then return ropeItemAvailable end
+
+    lastItemCheck = now
+    local ok, count = pcall(function()
+        return exports.acn_inventory:Search('count', Config.ItemName)
+    end)
+    ropeItemAvailable = ok and (tonumber(count) or 0) > 0
+    return ropeItemAvailable
+end
+
 local function cancelPlacement(server, silent)
     placement = nil
-    hideText()
     deleteCarryVisuals()
     if server then lib.callback.await('remorquage_corde:server:cancel', false) end
     if not silent then notify(Config.Text.cancelled, 'warning') end
 end
 
 local function attachFirst(vehicle)
-    if not attachmentAnimation(vehicle, 'Fixation à l’arrière du véhicule tracteur', Config.AttachDuration) then return end
+    if not attachmentAnimation(vehicle, 'Fixation à l’arrière du véhicule tracteur', Config.AttachDuration) then
+        cancelPlacement(true, true)
+        return
+    end
     local netId = VehToNet(vehicle)
-    if netId == 0 then return notify('Ce véhicule n’est pas synchronisé.', 'error') end
+    if netId == 0 then
+        cancelPlacement(true, true)
+        return notify('Ce véhicule n’est pas synchronisé.', 'error')
+    end
 
     local response = lib.callback.await('remorquage_corde:server:setTractor', false, netId)
-    if not response or not response.ok then return notify(errorText(response and response.code), 'error') end
+    if not response or not response.ok then
+        cancelPlacement(true, true)
+        return notify(errorText(response and response.code), 'error')
+    end
 
     placement.stage = 'towed'
     placement.tractorNetId = netId
     createCarryRope(vehicle)
     notify(Config.Text.attachedFirst, 'success')
+
+    CreateThread(function()
+        while placement and placement.stage == 'towed' do
+            if carryRope and placement.tractorNetId then
+                local tractor = NetToVeh(placement.tractorNetId)
+                if tractor ~= 0 and DoesEntityExist(tractor) then
+                    local rear = attachmentPoint(tractor, true)
+                    local hand = GetPedBoneCoords(PlayerPedId(), 57005, 0.0, 0.0, 0.0)
+                    RopeForceLength(carryRope, math.min(Config.MaxPlacementDistance, math.max(Config.MinRopeLength, #(rear - hand) + 0.8)))
+                end
+            end
+
+            if IsControlJustReleased(0, Config.Controls.cancel) then
+                cancelPlacement(true, false)
+            end
+            Wait(0)
+        end
+    end)
 end
 
 local function attachSecond(vehicle)
@@ -161,56 +175,19 @@ local function attachSecond(vehicle)
     if not response or not response.ok then return notify(errorText(response and response.code), 'error') end
 
     placement = nil
-    hideText()
     deleteCarryVisuals()
     notify(Config.Text.ropeReady, 'success')
 end
 
-local function startPlacement()
-    if placement then return end
+local function attachTractorFromTarget(vehicle)
+    if placement or ownedRopeId or not DoesEntityExist(vehicle) then return end
     if IsPedInAnyVehicle(PlayerPedId(), false) then return notify('Descendez du véhicule pour manipuler la corde.', 'error') end
 
     local response = lib.callback.await('remorquage_corde:server:begin', false)
     if not response or not response.ok then return notify(errorText(response and response.code), 'error') end
 
-    placement = { stage = 'tractor', candidate = nil, point = nil, lastScan = 0 }
-    notify('Placez-vous derrière le véhicule qui servira de tracteur.', 'inform')
-
-    CreateThread(function()
-        while placement do
-            local now = GetGameTimer()
-            if now - placement.lastScan >= 180 then
-                placement.lastScan = now
-                placement.candidate, placement.point = nearestAttachment(placement.stage == 'tractor')
-            end
-
-            if placement.candidate and DoesEntityExist(placement.candidate) and placement.point then
-                local colour = placement.stage == 'tractor' and Config.Marker.tractorColour or Config.Marker.towedColour
-                DrawMarker(Config.Marker.type, placement.point.x, placement.point.y, placement.point.z + 0.08, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, Config.Marker.scale.x, Config.Marker.scale.y, Config.Marker.scale.z, colour[1], colour[2], colour[3], colour[4], false, true, 2, false, nil, nil, false)
-                showText((placement.stage == 'tractor' and Config.Text.selectTractor or Config.Text.selectTowed) .. '\n' .. Config.Text.cancel)
-
-                if IsControlJustReleased(0, Config.Controls.confirm) then
-                    local vehicle = placement.candidate
-                    if placement.stage == 'tractor' then attachFirst(vehicle) else attachSecond(vehicle) end
-                end
-            else
-                showText(Config.Text.noVehicle .. '\n' .. Config.Text.cancel)
-            end
-
-            if carryRope and placement.tractorNetId then
-                local tractor = NetToVeh(placement.tractorNetId)
-                if tractor ~= 0 and DoesEntityExist(tractor) then
-                    local rear = attachmentPoint(tractor, true)
-                    local hand = GetPedBoneCoords(PlayerPedId(), 57005, 0.0, 0.0, 0.0)
-                    RopeForceLength(carryRope, math.min(Config.MaxPlacementDistance, math.max(Config.MinRopeLength, #(rear - hand) + 0.8)))
-                end
-            end
-
-            if IsControlJustReleased(0, Config.Controls.cancel) then cancelPlacement(true, false) end
-            Wait(0)
-        end
-        hideText()
-    end)
+    placement = { stage = 'tractor' }
+    attachFirst(vehicle)
 end
 
 local function removeVisual(ropeId, keepState)
@@ -263,15 +240,56 @@ end
 
 local function useRope()
     if placement then return cancelPlacement(true, false) end
-    if ownedRopeId then
-        notify('Approchez-vous d’un point d’attache et appuyez sur E pour détacher la corde.', 'inform')
-        return
-    end
-    startPlacement()
+    notify('Maintenez ALT en regardant un véhicule pour utiliser la corde.', 'inform')
 end
 
 RegisterNetEvent('remorquage_corde:client:useItem', useRope)
 exports('UseRope', useRope)
+
+exports.ox_target:addGlobalVehicle({
+    {
+        name = targetNames.tractor,
+        icon = 'fa-solid fa-link',
+        label = 'Attacher la corde à l’arrière',
+        distance = Config.InteractionDistance,
+        canInteract = function(entity)
+            return not placement and not ownedRopeId and not detachBusy and DoesEntityExist(entity) and playerHasRopeItem(false)
+        end,
+        onSelect = function(data)
+            if not playerHasRopeItem(true) then return notify(errorText('missing_item'), 'error') end
+            attachTractorFromTarget(data.entity)
+        end
+    },
+    {
+        name = targetNames.towed,
+        icon = 'fa-solid fa-link',
+        label = 'Attacher la corde à l’avant',
+        distance = Config.InteractionDistance,
+        canInteract = function(entity)
+            return placement and placement.stage == 'towed' and placement.tractorNetId ~= VehToNet(entity) and playerHasRopeItem(false)
+        end,
+        onSelect = function(data)
+            if not playerHasRopeItem(true) then return notify(errorText('missing_item'), 'error') end
+            attachSecond(data.entity)
+        end
+    },
+    {
+        name = targetNames.detach,
+        icon = 'fa-solid fa-link-slash',
+        label = 'Détacher la corde',
+        distance = Config.InteractionDistance,
+        canInteract = function(entity)
+            if not ownedRopeId or placement or detachBusy then return false end
+            local data = ropeStates[ownedRopeId]
+            if not data then return false end
+            local netId = VehToNet(entity)
+            return netId == data.tractorNetId or netId == data.towedNetId
+        end,
+        onSelect = function(data)
+            detachOwnedRope(data.entity)
+        end
+    }
+})
 
 RegisterNetEvent('remorquage_corde:client:ropeCreated', function(data)
     if type(data) ~= 'table' or not data.id then return end
@@ -288,54 +306,6 @@ RegisterNetEvent('remorquage_corde:client:ropeRemoved', function(ropeId, reason)
         ownedRopeId = nil
         if reason == 'broken' then notify('La corde a cassé : les véhicules se sont trop éloignés.', 'error')
         elseif reason == 'owner_left' then notify('La corde a été retirée.', 'warning') end
-    end
-end)
-
-CreateThread(function()
-    while true do
-        local wait = 1500
-        local promptVisible = textVisible == Config.Text.detachPrompt
-
-        if ownedRopeId and not placement and not detachBusy then
-            wait = 350
-            local data = ropeStates[ownedRopeId]
-            local tractor = data and NetToVeh(data.tractorNetId) or 0
-            local towed = data and NetToVeh(data.towedNetId) or 0
-
-            if tractor ~= 0 and towed ~= 0 and DoesEntityExist(tractor) and DoesEntityExist(towed) then
-                local rear = attachmentPoint(tractor, true)
-                local front = attachmentPoint(towed, false)
-                local pedCoords = GetEntityCoords(PlayerPedId())
-                local rearDistance = #(pedCoords - rear)
-                local frontDistance = #(pedCoords - front)
-                local point, vehicle
-
-                if rearDistance <= Config.InteractionDistance and rearDistance <= frontDistance then
-                    point, vehicle = rear, tractor
-                elseif frontDistance <= Config.InteractionDistance then
-                    point, vehicle = front, towed
-                end
-
-                if point then
-                    wait = 0
-                    DrawMarker(Config.Marker.type, point.x, point.y, point.z + 0.08, 0.0, 0.0, 0.0, 0.0, 180.0, 0.0, Config.Marker.scale.x, Config.Marker.scale.y, Config.Marker.scale.z, Config.Marker.detachColour[1], Config.Marker.detachColour[2], Config.Marker.detachColour[3], Config.Marker.detachColour[4], false, true, 2, false, nil, nil, false)
-                    showText(Config.Text.detachPrompt)
-
-                    if IsControlJustReleased(0, Config.Controls.confirm) then
-                        hideText()
-                        detachOwnedRope(vehicle)
-                    end
-                elseif promptVisible then
-                    hideText()
-                end
-            elseif promptVisible then
-                hideText()
-            end
-        elseif promptVisible then
-            hideText()
-        end
-
-        Wait(wait)
     end
 end)
 
@@ -377,8 +347,10 @@ end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    hideText()
     deleteCarryVisuals()
+    if GetResourceState('ox_target') == 'started' then
+        exports.ox_target:removeGlobalVehicle({ targetNames.tractor, targetNames.towed, targetNames.detach })
+    end
     for ropeId in pairs(ropeHandles) do removeVisual(ropeId, true) end
     if RopeAreTexturesLoaded() then RopeUnloadTextures() end
 end)

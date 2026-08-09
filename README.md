@@ -6,6 +6,7 @@ Ressource FiveM/ESX permettant de relier physiquement deux véhicules avec l’i
 
 - `es_extended`
 - `ox_lib`
+- `ox_target`
 - `acn_inventory`
 - OneSync activé
 
@@ -15,7 +16,7 @@ Ressource FiveM/ESX permettant de relier physiquement deux véhicules avec l’i
 2. Vérifiez que l’item unique `CORDE` existe dans `acn_inventory`.
 3. Ajoutez `ensure remorquage_corde_by_la_quica` après les dépendances dans `server.cfg`.
 
-`ESX.RegisterUsableItem` permet normalement le clic droit **Utiliser** depuis `acn_inventory`. Si votre configuration d’items exige un export client, associez l’item à :
+L’export suivant reste disponible si votre configuration d’items exige une action client. Il affiche un rappel expliquant d’utiliser `Alt` :
 
 ```lua
 client = {
@@ -25,13 +26,14 @@ client = {
 
 ## Utilisation
 
-1. Utilisez l’item `CORDE` hors d’un véhicule.
-2. Approchez-vous de l’arrière du véhicule tracteur et appuyez sur `E`.
-3. Transportez la corde jusqu’à l’avant du véhicule à tracter.
-4. Appuyez de nouveau sur `E` après l’animation de fixation.
-5. Montez dans le véhicule tracteur et roulez progressivement.
+1. Possédez l’item `CORDE` dans votre inventaire.
+2. Maintenez `Alt` en regardant le véhicule tracteur.
+3. Sélectionnez **Attacher la corde à l’arrière**.
+4. Transportez la corde jusqu’au second véhicule.
+5. Maintenez `Alt` sur celui-ci et sélectionnez **Attacher la corde à l’avant**.
+6. Montez dans le véhicule tracteur et roulez progressivement.
 
-Pour retirer la corde, approchez-vous de son point d’attache à l’arrière du véhicule tracteur ou à l’avant du véhicule tracté, puis appuyez sur `E`. Retour arrière annule la pose avant la seconde fixation.
+Pour retirer la corde, maintenez `Alt` sur l’un des deux véhicules et sélectionnez **Détacher la corde**. Retour arrière annule la pose avant la seconde fixation.
 
 ## Sécurité et synchronisation
 

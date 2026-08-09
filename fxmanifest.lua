@@ -17,6 +17,7 @@ server_script 'server/main.lua'
 
 dependencies {
     'ox_lib',
+    'ox_target',
     'es_extended',
     'acn_inventory'
 }
