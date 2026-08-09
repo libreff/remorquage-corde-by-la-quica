@@ -26,12 +26,11 @@ client = {
 
 ## Utilisation
 
-1. Possédez l’item `CORDE` dans votre inventaire.
-2. Maintenez `Alt` en regardant le véhicule tracteur.
-3. Sélectionnez **Attacher la corde à l’arrière**.
-4. Transportez la corde jusqu’au second véhicule.
-5. Maintenez `Alt` sur celui-ci et sélectionnez **Attacher la corde à l’avant**.
-6. Montez dans le véhicule tracteur et roulez progressivement.
+1. Maintenez `Alt` en regardant le véhicule tracteur.
+2. Sélectionnez **Attacher la corde à l’arrière**. Le serveur vérifie alors que vous possédez l’item `CORDE`.
+3. Transportez la corde jusqu’au second véhicule.
+4. Maintenez `Alt` sur celui-ci et sélectionnez **Attacher la corde à l’avant**.
+5. Montez dans le véhicule tracteur et roulez progressivement.
 
 Pour retirer la corde, maintenez `Alt` sur l’un des deux véhicules et sélectionnez **Détacher la corde**. Retour arrière annule la pose avant la seconde fixation.
 

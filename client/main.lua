@@ -6,8 +6,6 @@ local ropeHandles = {}
 local ownedRopeId
 local breakPending = {}
 local detachBusy = false
-local ropeItemAvailable = false
-local lastItemCheck = 0
 local targetNames = {
     tractor = 'remorquage_corde_attach_tractor',
     towed = 'remorquage_corde_attach_towed',
@@ -104,18 +102,6 @@ local function errorText(code)
         not_owner = 'Seul le joueur ayant installé cette corde peut la retirer.'
     }
     return errors[code] or 'Action impossible.'
-end
-
-local function playerHasRopeItem(force)
-    local now = GetGameTimer()
-    if not force and now - lastItemCheck < 750 then return ropeItemAvailable end
-
-    lastItemCheck = now
-    local ok, count = pcall(function()
-        return exports.acn_inventory:Search('count', Config.ItemName)
-    end)
-    ropeItemAvailable = ok and (tonumber(count) or 0) > 0
-    return ropeItemAvailable
 end
 
 local function cancelPlacement(server, silent)
@@ -253,10 +239,9 @@ exports.ox_target:addGlobalVehicle({
         label = 'Attacher la corde à l’arrière',
         distance = Config.InteractionDistance,
         canInteract = function(entity)
-            return not placement and not ownedRopeId and not detachBusy and DoesEntityExist(entity) and playerHasRopeItem(false)
+            return not placement and not ownedRopeId and not detachBusy and DoesEntityExist(entity)
         end,
         onSelect = function(data)
-            if not playerHasRopeItem(true) then return notify(errorText('missing_item'), 'error') end
             attachTractorFromTarget(data.entity)
         end
     },
@@ -266,10 +251,9 @@ exports.ox_target:addGlobalVehicle({
         label = 'Attacher la corde à l’avant',
         distance = Config.InteractionDistance,
         canInteract = function(entity)
-            return placement and placement.stage == 'towed' and placement.tractorNetId ~= VehToNet(entity) and playerHasRopeItem(false)
+            return placement and placement.stage == 'towed' and placement.tractorNetId ~= VehToNet(entity)
         end,
         onSelect = function(data)
-            if not playerHasRopeItem(true) then return notify(errorText('missing_item'), 'error') end
             attachSecond(data.entity)
         end
     },
