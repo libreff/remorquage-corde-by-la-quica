@@ -92,7 +92,7 @@ end
 
 local function errorText(code)
     local errors = {
-        missing_item = 'Vous ne possédez pas l’item CORDE.',
+        missing_item = 'Vous ne possédez pas l’item corde.',
         already_towing = 'Vous avez déjà une corde de remorquage active.',
         expired = 'La préparation de la corde a expiré.',
         invalid_vehicle = 'Ce véhicule n’est pas valide.',

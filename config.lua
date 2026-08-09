@@ -1,6 +1,6 @@
 Config = {}
 
-Config.ItemName = 'CORDE'
+Config.ItemName = 'corde'
 
 Config.InteractionDistance = 2.4
 Config.ServerValidationDistance = 6.0
